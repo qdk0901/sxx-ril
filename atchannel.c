@@ -54,6 +54,7 @@
 static pthread_t s_tid_reader;
 static int s_fd = -1;    /* fd of the AT channel */
 static ATUnsolHandler s_unsolHandler;
+static int is_hide = 0;
 
 /* for input buffering */
 
@@ -258,7 +259,6 @@ static int isUnsolicited(const char *line)
     return 0;
 }
 
-
 /** assumes s_commandmutex is held */
 static void handleFinalResponse(const char *line)
 {
@@ -444,7 +444,7 @@ static const char *readline()
         } while (count < 0 && errno == EINTR);
 
         if (count > 0) {
-        		printArray("=>",p_read,count);
+        	//printArray("=>",p_read,count);
             AT_DUMP( "<< ", p_read, count );
             s_readCount += count;
 
@@ -478,7 +478,8 @@ static const char *readline()
 
 	if(0 == strcmp(ret, "> "))
 		*s_ATBufferCur = '\0';
-    LOGD("AT< %s\n", ret);
+    if (!is_hide)
+        LOGD("AT< %s\n", ret);
     return ret;
 }
 
@@ -554,6 +555,11 @@ static void *readerLoop(void *arg)
  * This function exists because as of writing, android libc does not
  * have buffered stdio.
  */
+void hide_info(int hide)
+{
+   // is_hide = hide;
+}
+
 static int writeline (const char *s)
 {
     size_t cur = 0;
@@ -564,7 +570,8 @@ static int writeline (const char *s)
         return AT_ERROR_CHANNEL_CLOSED;
     }
 
-    LOGD("AT> %s\n", s);
+    if (!is_hide)
+        LOGD("AT> %s\n", s);
 
     AT_DUMP( ">> ", s, strlen(s) );
 
@@ -815,6 +822,8 @@ static int at_send_command_full_nolock (const char *command, ATCommandType type,
 #endif /*USE_NP*/
 
     while (sp_response->finalResponse == NULL && s_readerClosed == 0) {
+
+        
         if (timeoutMsec != 0) {
 #ifdef USE_NP
             err = pthread_cond_timeout_np(&s_commandcond, &s_commandmutex, timeoutMsec);
@@ -853,6 +862,29 @@ error:
     return err;
 }
 
+#define AT_TIMEOUT_PROTECT 5000
+static char* exclude_command_list[] =
+{
+    "AT+COPS=?",
+    "AT+CUSD",
+    "AT+CCFC",
+    "AT+CCWA",
+    "AT+CGATT",
+    NULL,
+};
+
+static int check_need_protect(char* cmd)
+{
+    int i;
+    for(i = 0; exclude_command_list[i] != NULL; i++) {
+        if (strStartsWith(cmd, exclude_command_list[i])) {
+            LOGD("Long run comnand, do not need protected");
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /**
  * Internal send_command implementation
  *
@@ -868,9 +900,14 @@ static int at_send_command_full (const char *command, ATCommandType type,
         /* cannot be called from reader thread */
         return AT_ERROR_INVALID_THREAD;
     }
+
+    if (check_need_protect(command))
+        timeoutMsec = AT_TIMEOUT_PROTECT;
+
     pthread_mutex_lock(&commandmutex);
     pthread_mutex_lock(&s_commandmutex);
 
+    
     err = at_send_command_full_nolock(command, type,
                     responsePrefix, smspdu,
                     timeoutMsec, pp_outResponse);

@@ -40,7 +40,6 @@ static const RIL_RadioFunctions s_callbacks = {
 
 const struct RIL_Env *s_rilenv;
 
-
 static int 	s_port = -1;
 const char 	* s_device_path = NULL;
 static int	s_device_socket = 0;
@@ -225,20 +224,12 @@ void modem_init_generic()
 {
 	ATResponse *p_response = NULL;
 	int err;
+    
+	at_send_command("AT+CREG=1", NULL);
 
-	at_send_command("AT+CREG=2", &p_response);
+	at_send_command("AT+CGREG=1", NULL);
 
-	if (err < 0 || p_response->success == 0) {
-		at_send_command("AT+CREG=1", NULL);
-	}
-
-	at_response_free(p_response);
-
-	at_send_command("AT+CREG=2", NULL);
-
-	at_send_command("AT+CGREG=2", NULL);
-
-	at_send_command("AT+CGATT=1", NULL);
+	//at_send_command("AT+CGATT=1", NULL);
 
 	at_send_command("AT+CCWA=1", NULL);
 
@@ -250,7 +241,9 @@ void modem_init_generic()
 
 	at_send_command("AT+COLP=0", NULL);
 
-	at_send_command("AT+CSCS=\"UCS2\"", NULL);
+	//at_send_command("AT+CSCS=\"UCS2\"", NULL);
+
+	at_send_command("AT+CSMP =,,0,8", NULL);
 
 	at_send_command("AT+CUSD=1", NULL);
 
@@ -263,18 +256,20 @@ void modem_init_generic()
 
 	at_send_command("AT+CMGF=0", NULL);
 
-	at_send_command("AT+CMGD=,4",NULL);
+	//at_send_command("AT+CMGD=,4",NULL);
 
 	at_send_command("AT+CSCA?", NULL);
 
 	at_send_command("AT+CMEE=1", NULL);	
+    
+    setRadioState(RADIO_STATE_SIM_NOT_READY);
 }
 
 static void initializeCallback(void *param)
 {
 	property_set("ro.ril.ecclist", "119,122,120,112,911");
 	setRadioState (RADIO_STATE_SIM_NOT_READY);
-
+    int err;
 	at_send_command("ATE", NULL);
 
 	at_handshake();
@@ -353,6 +348,7 @@ static void onATTimeout()
 	s_closed = 1;
 
 	setRadioState (RADIO_STATE_UNAVAILABLE);
+    exit(1);
 }
 
 static void usage(char *s)
@@ -386,6 +382,22 @@ static void * mainLoop(void *param)
 				tcgetattr( fd, &ios );
 				ios.c_lflag = 0;  /* disable ECHO, ICANON, etc... */
 				tcsetattr( fd, TCSANOW, &ios );
+
+/*
+fcntl(fd, F_SETFL, 0);
+struct termios t;
+tcgetattr( fd,&t);
+t.c_cflag &= ~(CSIZE | CSTOPB | PARENB );	
+t.c_cflag |= (CREAD | CLOCAL | CS8 |CRTSCTS);
+//在调试接收短信遇到不能接收问题，把串口模式设置为 raw mode后可以接收
+t.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);//raw mode
+t.c_iflag &= ~( ICRNL | INLCR |IGNCR);
+t.c_iflag &= ~(IXON | IXOFF );	
+t.c_oflag &= ~OPOST;
+cfsetispeed(&t, B115200);
+cfsetospeed(&t, B115200);
+tcsetattr( fd, TCSANOW, &t);
+*/
 			}
 
 			if (fd < 0) {
@@ -395,7 +407,8 @@ static void * mainLoop(void *param)
 		}
 
 		LOGD ("open AT interface success! \n");
-
+        
+        //sleep(8);
 		s_closed = 0;
 		ret = at_open(fd,onUnsolicited);
 

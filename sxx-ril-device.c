@@ -152,18 +152,15 @@ void _requestGetIMEIWCDMA(void *data, size_t datalen, RIL_Token t)
 	ATResponse *atresponse = NULL;
 	int err;
 
-	at_send_command_singleline("AT+CGSN", "+CGSN:",&atresponse);
-	//err = at_send_command_numeric("AT+CGSN", &atresponse);
-
-
+	err = at_send_command_numeric("AT+CGSN", &atresponse);
 
 	if (err < 0 || atresponse->success == 0) {
 		RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
 	} else {
-		property_set("ril.imei",atresponse->p_intermediates->line+6);
+		property_set("ril.imei",atresponse->p_intermediates->line);
 
 		RIL_onRequestComplete(t, RIL_E_SUCCESS,
-				atresponse->p_intermediates->line+6,
+				atresponse->p_intermediates->line,
 				sizeof(char *));
 	}
 	at_response_free(atresponse);
@@ -191,6 +188,12 @@ void requestGetIMEISV(void *data, size_t datalen, RIL_Token t)
 		free(response);
 }
 REGISTER_DEFAULT_ITEM(RIL_REQUEST_GET_IMEISV, requestGetIMEISV)
+
+void requestReportStkServiceIsRunning(void *data, size_t datalen, RIL_Token t)
+{
+	RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+}
+REGISTER_DEFAULT_ITEM(RIL_REQUEST_REPORT_STK_SERVICE_IS_RUNNING, requestReportStkServiceIsRunning)
 
 	/**
 	 * RIL_REQUEST_BASEBAND_VERSION

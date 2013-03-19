@@ -13,6 +13,7 @@ void onSIMReady()
 {
 	at_send_command_singleline("AT+CSMS=1", "+CSMS:", NULL); 
 	at_send_command("AT+CNMI=1,2,2,0,0", NULL);
+	at_send_command("AT+CSCA=\"13010200500\", 145", NULL);
 }
 
 
@@ -281,7 +282,6 @@ static void  requestSimIo(void *data, size_t datalen, RIL_Token t)
 
 	/* FIXME handle pin2 */
 
-    
 	if (p_args->data == NULL) {
 		asprintf(&cmd, "AT+CRSM=%d,%d,%d,%d,%d",
 				p_args->command, p_args->fileid,

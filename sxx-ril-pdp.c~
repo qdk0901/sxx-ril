@@ -29,7 +29,7 @@ void onDataCallListChanged(void *param);
 extern int getZmdsValue();
 extern void reportSignalStrength(void *param);
 
-#define SIGNAL_POLL_DELAY 60
+#define SIGNAL_POLL_DELAY 120
 #define MAX_EVENTS 1024
 #define PPP_TTY_PATH "ppp0"
 #define PPP_INTERFACE  "ppp0"
@@ -52,7 +52,6 @@ typedef enum
 	PPPD_STM_RUNNING,
 	PPPD_STM_EXCEPTION,
 	PPPD_STM_STOPPING,
-    PPPD_STM_HALTING,
 }PPPD_STM_STATE;
 
 typedef enum
@@ -62,8 +61,6 @@ typedef enum
 	PPPD_SIG_TIMER,
 	PPPD_SIG_EXIT,
 	PPPD_SIG_WAKEUP,
-    PPPD_SIG_HALT,
-    PPPD_SIG_RESTART,
 }PPPD_SIG_TYPE;
 
 typedef struct
@@ -247,9 +244,7 @@ static int _start_pppd()
 		"password", //18
 		g_password,// 19
 		"lcp-max-configure",
-		"2",
-        "ipcp-max-configure",
-        "15",
+		"1",
 		NULL,
 		NULL,
 	};
@@ -274,7 +269,6 @@ static int _start_pppd()
 	return 0;
 }
 
-
 static int _stop_pppd()
 {
 	int i;
@@ -286,18 +280,6 @@ static int _stop_pppd()
 		g_pm.pppid = 0;
 	}
 	return 0;
-}
-
-void halt_pppd()
-{
-    int sig = PPPD_SIG_HALT;
-    write(g_pm.wfd, &sig, 4);
-    wait_for_pppd_down();
-}
-void restart_pppd()
-{
-    int sig = PPPD_SIG_RESTART;
-    write(g_pm.wfd, &sig, 4);
 }
 
 static int start_timer()
@@ -325,7 +307,6 @@ static char* stm_to_string(int stm)
 		case PPPD_STM_RUNNING: return "PPPD_STM_RUNNING";
 		case PPPD_STM_EXCEPTION: return "PPPD_STM_EXCEPTION";
 		case PPPD_STM_STOPPING: return "PPPD_STM_STOPPING";
-        case PPPD_STM_HALTING: return "PPPD_STM_HALTING";
 	}
 	return "UNKOWN_STATE";
 }
@@ -336,8 +317,6 @@ static char* sig_to_string(int sig)
 		case PPPD_SIG_STOP: return "PPPD_SIG_STOP";
 		case PPPD_SIG_EXIT: return "PPPD_SIG_EXIT";
 		case PPPD_SIG_TIMER: return "PPPD_SIG_TIMER";
-        case PPPD_SIG_HALT: return "PPPD_STM_HALT";
-        case PPPD_SIG_RESTART: return "PPPD_STM_RESTART";
 	}
 	return "UNKOWN_SIG";	
 }
@@ -403,23 +382,16 @@ static void* pm_thread(void* ptr)
 			continue;
 
 		int sig = -1;
-		int n;
+		int clear;
 		int old_stm = g_pm.stm;
-
-        //ignore some timer signal
-		do {
-            n = read(g_pm.rfd, &sig, 4);
-        }while(n > 0 && sig == PPPD_SIG_TIMER);
+		read(g_pm.rfd, &sig, 4);
 
 		if (sig == PPPD_SIG_TIMER) {
 			signal_poll_delay--;
 			if (signal_poll_delay == 0) {
 				signal_poll_delay = SIGNAL_POLL_DELAY;
-                hide_info(1);
 				reportSignalStrength(NULL);
-                hide_info(0);
 			}
-            modem_periodic();
 		}
 		switch(g_pm.stm){
 			case PPPD_STM_IDLE:
@@ -463,11 +435,6 @@ static void* pm_thread(void* ptr)
 						g_pm.stm = PPPD_STM_EXCEPTION;
 					}
 				}
-            
-                if (sig == PPPD_SIG_HALT) {
-                    g_pm.stm = PPPD_STM_HALTING;
-                    _stop_pppd();
-                }
 
 				break;
 			case PPPD_STM_EXCEPTION:
@@ -495,12 +462,6 @@ static void* pm_thread(void* ptr)
 					}
 				}
 				break;
-            case PPPD_STM_HALTING:
-                if (sig == PPPD_SIG_RESTART) {
-                        _start_pppd();
-                        g_pm.stm = PPPD_STM_STARTING;  
-                }
-                break;
 		}
 
 		if (old_stm != g_pm.stm) {
@@ -528,7 +489,7 @@ int init_pppd_manager()
 		exit(1);	
 	}
 	fcntl(pfd[0], F_SETFL, O_NONBLOCK);
-	//fcntl(pfd[1], F_SETFL, O_NONBLOCK);
+	fcntl(pfd[1], F_SETFL, O_NONBLOCK);
 
 	g_pm.rfd = pfd[0];
 	g_pm.wfd = pfd[1];
@@ -596,9 +557,6 @@ void reportDataCallList(RIL_Token *t)
 	for (p_cur = p_response->p_intermediates; p_cur != NULL;
 			p_cur = p_cur->p_next)
 		n++;
-
-    if (!get_connection_status())
-        n = 0;
 
 	RIL_Data_Call_Response_v6 *responses =
 		alloca(n * sizeof(RIL_Data_Call_Response_v6));
@@ -754,7 +712,6 @@ void requestDataCallList(void *data, size_t datalen, RIL_Token t)
 }
 REGISTER_DEFAULT_ITEM(RIL_REQUEST_DATA_CALL_LIST, requestDataCallList)
 
-int need_network_fix = 0;
 // data call thread
 static void* dc_thread(void* ptr)
 {
@@ -790,17 +747,14 @@ static void* dc_thread(void* ptr)
 	}
 
 	if (timeout < 0) {
-        stop_pppd();
 		reportFakeDataCallList(&t);
 		goto out;
 	}
 
-    if (need_network_fix == 1) {
-	    int zv = getZmdsValue();
-	    if (zv == 13) {
-		    select_tech(0);
-	    }
-    }
+	int zv = getZmdsValue();
+	if (zv == 13) {
+		select_tech(0);
+	}
 	reportDataCallList(&t);
 
 	at_send_command("AT+CGEREP=1,0", NULL);
@@ -815,7 +769,7 @@ void launch_data_call(void *data, size_t datalen, RIL_Token t)
 	dc_data_t* dcd = (dc_data_t*)malloc(sizeof(dc_data_t));
 	
 	memset(dcd, 0, sizeof(dc_data_t));
-	char* apn = ((const char **)data)[2];
+	char* apn = ((const char **)data)[0];
 	char* user = ((const char **)data)[3];
 	char* password = ((const char **)data)[4];
 	
@@ -844,9 +798,7 @@ REGISTER_DEFAULT_ITEM(RIL_REQUEST_SETUP_DATA_CALL, requestSetupDataCall)
 void requestDeactivateDataCall(void *data, size_t datalen, RIL_Token t)
 {
 	stop_pppd();
-    wait_for_pppd_down();
 	RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
-    RIL_requestTimedCallback (onDataCallListChanged, NULL, &TIMEVAL_3);
 }
 REGISTER_DEFAULT_ITEM(RIL_REQUEST_DEACTIVATE_DATA_CALL, requestDeactivateDataCall)
 

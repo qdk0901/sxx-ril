@@ -59,7 +59,6 @@ static void register_##name() {\
 
 typedef void (*init_handler)(void);
 typedef void (*bringup_handler)(void);
-typedef void (*periodic_handler)(void);
 typedef struct {
 	char* name;
 	char* at_port;
@@ -68,7 +67,6 @@ typedef struct {
 	int vid_pid;
 	init_handler init;
 	bringup_handler bringup;
-    periodic_handler periodic;
 }modem_spec_t;
 void register_modem(modem_spec_t* modem);
 
@@ -84,9 +82,6 @@ extern char* get_at_port();
 extern char* get_data_port();
 extern char* get_chat_option();
 extern void modem_init_specific();
-extern void modem_periodic();
-extern void hide_info(int hide);
-
 extern RIL_RadioState sState ;
 extern pthread_mutex_t s_state_mutex ;
 extern pthread_cond_t s_state_cond ;
@@ -126,8 +121,5 @@ typedef struct {
 } RIL_SIM_IO;
 
 extern int stop_pppd();
-
-static const struct timeval TIMEVAL_3 = {3,0};
-static const struct timeval TIMEVAL_10 = {10,0};
 
 #endif

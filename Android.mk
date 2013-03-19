@@ -9,7 +9,7 @@ LOCAL_SRC_FILES:= \
     atchannel.c \
     misc.c \
     at_tok.c \
-		sxx-ril.c \
+    sxx-ril.c \
     sxx-ril-pdp.c \
     sxx-ril-manager.c \
     sxx-ril-network.c \
@@ -18,11 +18,17 @@ LOCAL_SRC_FILES:= \
     sxx-ril-service.c \
     sxx-ril-device.c \
     sxx-ril-sim.c \
-    sxx-ril-wm218.c \
+    sxx-ril-mg3732.c \
+    sxx-ril-dm6200.c \
     sxx-ril-dm6600.c \
+    sxx-ril-mw100.c \
+    sxx-ril-fr900.c \
+    sxx-ril-mh400b.c \
+    sxx-ril-phonebook.c \
     helper/gsm.c \
     helper/sms.c \
-    helper/sms_gsm.c
+    helper/sms_gsm.c \
+    helper/bit_op.c
 
 
 LOCAL_PRELINK_MODULE :=false

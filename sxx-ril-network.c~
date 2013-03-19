@@ -134,7 +134,6 @@ void requestSetNetworkSelectionAutomatic(void *data, size_t datalen,
 {
 	int err = 0;
 
-    
 	err = at_send_command("AT+COPS=0", NULL);
 	if (err < 0)
 		goto error;
@@ -270,6 +269,7 @@ error:
 	goto finally;
 }
 
+
 void reportSignalStrength(void *param)
 {
 	ATResponse *p_response = NULL;
@@ -307,9 +307,6 @@ void reportSignalStrength(void *param)
 
 	at_response_free(p_response);
 	p_response = NULL;
-
-    if (param != NULL)
-        resp.GW_SignalStrength.signalStrength = *(int*)param;
 
 	resp.LTE_SignalStrength.signalStrength = -1;
 	resp.LTE_SignalStrength.rsrp = -1;
@@ -377,7 +374,7 @@ error:
  * Scans for available networks.
  ok
  */
-static void requestQueryAvailableNetworks(void *data, size_t datalen, RIL_Token t)
+void requestQueryAvailableNetworks(void *data, size_t datalen, RIL_Token t)
 {
 	/* 
 	 * AT+COPS=?
@@ -1198,9 +1195,12 @@ REGISTER_DEFAULT_ITEM(RIL_REQUEST_CDMA_SUBSCRIPTION, requestCDMASubScription)
 
 static first_cfun = 1;
 extern void wait_for_pppd_down();
-static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
+void requestRadioPower(void *data, size_t datalen, RIL_Token t)
 {
 	int onOff;
+
+
+
 	int err=0;
 	ATResponse *p_response = NULL;
 
@@ -1231,7 +1231,7 @@ static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
 			// So, if we get an error, let's check to see if it
 			// turned on anyway
 
-			if (getRadioPower() != 1) {
+			if (isRadioOn() != 1) {
 				goto error;
 			}
 		}
@@ -1319,7 +1319,7 @@ void setRadioState(RIL_RadioState newState)
 		RIL_onUnsolicitedResponse (RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED,
 				NULL, 0);
 
-		if (sState == RADIO_STATE_SIM_READY) {
+		if (sState == RADIO_STATE_SIM_READY) { /* Radio is on and the SIM interface is available */
 			onSIMReady();
 		} else if (sState == RADIO_STATE_SIM_NOT_READY) {
 			onRadioPowerOn();
@@ -1329,12 +1329,12 @@ void setRadioState(RIL_RadioState newState)
 
 
 /** returns 1 if on, 0 if off, and -1 on error */
-int getRadioPower()
+int isRadioOn()
 {
 	ATResponse *p_response = NULL;
 	int err;
 	char *line;
-	int ret;
+	char ret;
 
 	err = at_send_command_singleline("AT+CFUN?", "+CFUN:", &p_response);
 
@@ -1348,12 +1348,12 @@ int getRadioPower()
 	err = at_tok_start(&line);
 	if (err < 0) goto error;
 
-	err = at_tok_nextint(&line, &ret);
+	err = at_tok_nextbool(&line, &ret);
 	if (err < 0) goto error;
 
 	at_response_free(p_response);
 
-	return ret;
+	return (int)ret;
 
 error:
 
@@ -1361,15 +1361,36 @@ error:
 	return -1;
 }
 
+
+static int last_reg_value = -1;
 static int onNetworkStateChanged(char* s, char* sms_pdu)
 {
 	int err;
 	int reg_value;
-	if (strStartsWith(s,"+CREG:") ||  strStartsWith(s,"+CGREG") ) {
-		RIL_onUnsolicitedResponse (
-				RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED,
-				NULL, 0);
+	if ( strStartsWith(s,"+CREG:") ||  strStartsWith(s,"+CGREG") ) {
+		err = at_tok_start (&s);
+		at_tok_nextint(&s,&reg_value);
+		at_tok_nextint(&s,&reg_value);			
+		if (err < 0 || reg_value != creg_value) {
+			LOGE("GSM Register Changed, old register=%d, new_register=%d\n",last_reg_value, reg_value);
+			last_reg_value = reg_value;
+			RIL_onUnsolicitedResponse (
+					RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED,
+					NULL, 0);		 
+		}
+	} else {
+		err = at_tok_start (&s);
+		at_tok_nextint(&s,&reg_value);
+		if (err < 0 || reg_value != last_reg_value) 
+		{        	
+			LOGE("EVDO Air port changed, old mode=%d, new_mode=%d\n",last_reg_value, reg_value);
+			last_reg_value = reg_value;
+			RIL_onUnsolicitedResponse (
+					RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED,
+					NULL, 0); 
+		}
 	}
+
 	return UNSOLICITED_SUCCESSED;
 }
 

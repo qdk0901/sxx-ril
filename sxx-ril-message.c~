@@ -146,7 +146,7 @@ error:
 REGISTER_DEFAULT_ITEM(RIL_REQUEST_GSM_SMS_BROADCAST_ACTIVATION, requestGSMSMSBroadcastActivation)
 
 
-static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
+void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 {
 	int err;
 	const char *smsc;
@@ -346,6 +346,9 @@ static void readMessageByIndex(void *param)
 	asprintf(&cmd, "AT+CMGR=%d,0", location);
 	at_send_command(cmd, NULL);
 	free(cmd);
+	//asprintf(&cmd, "AT+CMGD=%d", location);
+	//at_send_command(cmd, NULL);
+	//free(cmd);
 }
 static int onNewMesssageByIndex(char* s, char* sms_pdu)
 {

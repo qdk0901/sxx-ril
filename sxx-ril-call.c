@@ -55,6 +55,10 @@ static int callFromCLCCLine(char *line, RIL_Call *p_call)
 	if (err < 0) goto error;
 
 	p_call->isVoice = (mode == 0);
+	
+	// ignore data call mode
+	if (mode == 1)
+		goto error;
 
 	err = at_tok_nextbool(&line, &(p_call->isMpty));
 	if (err < 0) goto error;
@@ -64,14 +68,6 @@ static int callFromCLCCLine(char *line, RIL_Call *p_call)
 
 		/* tolerate null here */
 		if (err < 0) return 0;
-
-		// Some lame implementations return strings
-		// like "NOT AVAILABLE" in the CLCC line
-		if (p_call->number != NULL
-				&& 0 == strspn(p_call->number, "+0123456789")
-		   ) {
-			p_call->number = NULL;
-		}
 
 		err = at_tok_nextint(&line, &p_call->toa);
 		if (err < 0) goto error;

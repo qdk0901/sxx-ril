@@ -30,7 +30,10 @@ void register_request(int request, request_handler handler, int vid_pid)
 			continue;
 
 		if (r->request != 0 && r->vid_pid != VID_PID_GENERIC)
-			continue;
+			break;
+
+		if (r->request !=0 && vid_pid != VID_PID_GENERIC)
+			LOGD("Override %s , %x", requestToString(request), vid_pid);
 			
 		//LOGD("register request handler: %s, %x, %x\n", requestToString(request), handler, vid_pid);
 		r->request = request;
@@ -64,7 +67,7 @@ void register_unsolicited(char* prefix, unsolicited_handler handler, int vid_pid
 			continue;
 
 		if (u->prefix != 0 && u->vid_pid != VID_PID_GENERIC)
-			continue;
+			break;
 
 		//LOGD("register unsolicited handler: %s, %x, %x\n", prefix, handler, vid_pid);
 		u->prefix = prefix;
@@ -77,7 +80,7 @@ void register_unsolicited(char* prefix, unsolicited_handler handler, int vid_pid
 }
 
 
-#define MAX_SUPPORT_MODEM 5
+#define MAX_SUPPORT_MODEM 10
 static modem_spec_t modems[MAX_SUPPORT_MODEM];
 
 void register_modem(modem_spec_t* modem)
@@ -90,6 +93,9 @@ void register_modem(modem_spec_t* modem)
 		
 		LOGD("###### Add support for %s #######", modem->name);
 		memcpy(&modems[i], modem, sizeof(modem_spec_t));
+
+		if (modem->bringup)
+			modem->bringup();
 		break;
 	}
 
@@ -144,7 +150,8 @@ static modem_spec_t* usb_detect(const char *base)
 {
 	char busname[64], devname[64];
 	char desc[1024];
-	int n,hit = -1;
+	int n;
+	modem_spec_t* hit = NULL;
 	struct usb_device_descriptor *dev;
 
 	DIR *busdir, *devdir;
@@ -153,18 +160,22 @@ static modem_spec_t* usb_detect(const char *base)
 	int writable;
 
 	busdir = opendir(base);
-	if(busdir == 0) return 0;
+	if (busdir == 0) {
+		LOGD("Open %s error", base);
+		return 0;
+	}
 
-	while((de = readdir(busdir)) && (hit < 0)) {
+	while((de = readdir(busdir)) && (hit == NULL)) {
 		if(badname(de->d_name)) continue;
 
 		sprintf(busname, "%s/%s", base, de->d_name);
 		devdir = opendir(busname);
 		if(devdir == 0) continue;
 
-		while((de = readdir(devdir)) && (hit < 0)) {
-
-			if(badname(de->d_name)) continue;
+		while((de = readdir(devdir)) && (hit == NULL)) {
+			if (badname(de->d_name)) 
+				continue;
+				
 			sprintf(devname, "%s/%s", busname, de->d_name);
 
 			writable = 1;
@@ -176,6 +187,7 @@ static modem_spec_t* usb_detect(const char *base)
 			}
 			n = read(fd, desc, sizeof(desc));
 			dev = (void*) desc;
+			
 			hit = check_match((dev->idVendor<<16) | dev->idProduct);
 			close(fd);
 		}
@@ -205,12 +217,27 @@ char* get_at_port()
 
 	return g_modem->at_port;
 }
+
 char* get_data_port()
 {
 	if (!g_modem)
 		return "/dev/ttyUSB3";
 
 	return g_modem->data_port;
+}
+
+char* get_chat_option()
+{
+	if (!g_modem || !g_modem->chat_option)
+		return DEFAULT_CHAT_OPTION;
+	
+	return g_modem->chat_option;
+}
+
+void modem_periodic()
+{
+    if (g_modem->periodic)
+        g_modem->periodic();
 }
 
 void modem_init_specific()
@@ -232,7 +259,7 @@ void process_request(int request, void *data, size_t datalen, RIL_Token t)
 			continue;
 		}
 
-		//LOGD("handle request : %s", requestToString(request));
+		LOGD("handle request : %s", requestToString(request));
 		r->handler(data, datalen, t);
 		break;		
 	}
